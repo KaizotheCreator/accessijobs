@@ -16,11 +16,12 @@ class EmployerDashboard extends StatefulWidget {
 
 class _EmployerDashboardState extends State<EmployerDashboard> {
   int _selectedIndex = 1; // 👈 Default to Map Lobby
+  bool _showMapPreview = true; // 👈 Toggle for floating map
 
   final List<Widget> _pages = [
     const JobPostingModule(), // 👈 Job Posting
     const InteractiveMap(), // 👈 Map lobby
-    const JobApplicationsPage(jobId: ""),
+    const JobApplicationsPage(jobId: "placeholder"),
     const JobAnalyticsPage(),
     const CompanyProfilePage(),
   ];
@@ -45,29 +46,35 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _selectedIndex = prefs.getInt('employer_last_tab') ?? 1;
+      _showMapPreview = prefs.getBool('employer_map_preview') ?? true;
     });
   }
 
-  /// 💾 Save last opened tab
+  /// 💾 Save last opened tab + toggle
   Future<void> _saveLastTab(int index) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('employer_last_tab', index);
+  }
+
+  Future<void> _saveMapToggle(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('employer_map_preview', value);
   }
 
   /// 🔒 Check if user is logged in
   Future<void> _checkAuth() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      // 👇 If no employer session, go back to login
       Navigator.pushReplacementNamed(context, "/employerLogin");
     }
   }
 
   void _onSelectPage(int index) {
+    print("Switching to tab: $index"); // 👀 debug
     setState(() {
       _selectedIndex = index;
     });
-    _saveLastTab(index); // 💾 Remember selection
+    _saveLastTab(index);
     Navigator.pop(context); // Close the drawer
   }
 
@@ -75,13 +82,12 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false, // 🚫 removes the back arrow
+        automaticallyImplyLeading: false,
         title: Text(_pageTitles[_selectedIndex]),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              // ✅ Show confirmation dialog before logout
               final shouldLogout = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -103,7 +109,8 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
               if (shouldLogout ?? false) {
                 await FirebaseAuth.instance.signOut();
                 final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('employer_last_tab'); // clear saved state
+                await prefs.remove('employer_last_tab');
+                await prefs.remove('employer_map_preview');
                 Navigator.pushReplacementNamed(context, "/employerLogin");
               }
             },
@@ -145,18 +152,27 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
               title: const Text("Company Profile"),
               onTap: () => _onSelectPage(4),
             ),
+            const Divider(),
+            SwitchListTile(
+              title: const Text("Show Floating Map Preview"),
+              value: _showMapPreview,
+              onChanged: (value) {
+                setState(() => _showMapPreview = value);
+                _saveMapToggle(value);
+              },
+              secondary: const Icon(Icons.map_outlined),
+            ),
           ],
         ),
       ),
       body: Stack(
         children: [
-          // 👇 Main selected page
           Positioned.fill(
             child: _pages[_selectedIndex],
           ),
 
-          // 👇 Floating map preview (only when not on Map Lobby)
-          if (_selectedIndex != 1)
+          // 👇 Floating map preview (toggle controlled)
+          if (_selectedIndex != 1 && _showMapPreview)
             Positioned(
               bottom: 16,
               left: 16,
