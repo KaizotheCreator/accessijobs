@@ -99,7 +99,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                       child: const Text("No"),
                     ),
                     TextButton(
-                      onPressed: () => Navigator.pop(context, true),
+                      onPressed: () => Navigator.pop(context, "choose_login"),
                       child: const Text("Yes"),
                     ),
                   ],
@@ -111,7 +111,7 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.remove('employer_last_tab');
                 await prefs.remove('employer_map_preview');
-                Navigator.pushReplacementNamed(context, "/employerLogin");
+                Navigator.pushReplacementNamed(context, "/choose_login");
               }
             },
           )
