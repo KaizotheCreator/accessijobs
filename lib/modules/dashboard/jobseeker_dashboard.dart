@@ -43,7 +43,7 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
     if (user == null) {
       // ⚡ Not logged in → go back to login
       if (mounted) {
-        Navigator.pushReplacementNamed(context, "/jobseekerLogin");
+        Navigator.pushReplacementNamed(context, "/choose_login");
       }
     } else {
       await _fetchUserData();
@@ -117,11 +117,33 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
     );
   }
 
-  /// ✅ Explicit logout
-  Future<void> _logout() async {
-    await _auth.signOut();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, "/jobseekerLogin");
+  /// ✅ Explicit logout with confirm dialog
+  Future<void> _confirmLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Confirm Logout"),
+        content: const Text("Do you really want to log out?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("No"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Yes"),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await _auth.signOut();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('jobseeker_last_tab');
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, "/choose_login");
+      }
     }
   }
 
@@ -167,21 +189,19 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
               },
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            tooltip: "Logout",
+            onPressed: _confirmLogout,
+          ),
         ],
       ),
 
       // Drawer
       endDrawer: Drawer(
         child: ListView.builder(
-          itemCount: _sections.length + 1, // +1 for logout
+          itemCount: _sections.length,
           itemBuilder: (context, index) {
-            if (index == _sections.length) {
-              return ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text("Logout"),
-                onTap: _logout,
-              );
-            }
             return ListTile(
               leading: Icon(
                 index == 0
@@ -199,18 +219,26 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
               title: Text(_sections[index]),
               selected: _selectedIndex == index,
               onTap: () {
-                setState(() {
-                  _selectedIndex = index;
-                });
-                _saveLastTab(index);
-                Navigator.pop(context);
+                Navigator.pop(context); // close drawer first
+
+                if (index == 0) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const JobseekerProfile()),
+                  ).then((_) => _fetchUserData());
+                } else {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                  _saveLastTab(index);
+                }
               },
             );
           },
         ),
       ),
 
-      // Body
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         child: _pages[_selectedIndex],
@@ -218,14 +246,19 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
     );
   }
 
-  /// Profile Page (uses grid UI from your code)
+  /// Profile Page (uses Firestore userData)
   Widget _buildProfilePage() {
     final isWide = MediaQuery.of(context).size.width > 800;
+
+    if (userData == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
+          // Search bar
           Container(
             constraints: const BoxConstraints(maxWidth: 600),
             child: TextField(
@@ -246,6 +279,51 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
             ),
           ),
           const SizedBox(height: 24),
+
+          // Profile header card
+          Card(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundImage: (userData?["profileImageUrl"] ?? "").isNotEmpty
+                        ? NetworkImage(userData!["profileImageUrl"])
+                        : const AssetImage("assets/profile.png")
+                            as ImageProvider,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(userData?["name"] ?? "John Doe",
+                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(userData?["title"] ?? "Job Title",
+                      style: Theme.of(context).textTheme.bodyMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    userData?["bio"] ?? "No bio added yet.",
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.edit),
+                    label: const Text("Edit Profile"),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const JobseekerProfile()),
+                      ).then((_) => _fetchUserData());
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Grid cards
           Expanded(
             child: GridView.count(
               crossAxisCount: isWide ? 3 : 2,
@@ -260,7 +338,7 @@ class _JobseekerDashboardState extends State<JobseekerDashboard> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) => const JobseekerProfilePage()),
+                          builder: (context) => const JobseekerProfile()),
                     ).then((_) => _fetchUserData());
                   },
                 ),

@@ -1,0 +1,14 @@
+[
+  {
+    "origin": [
+      "http://localhost:54756",
+      "http://localhost:5000",
+      "http://127.0.0.1:5000",
+      "https://accessijobs.web.app",
+      "https://www.accessijobs.web.app"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "x-goog-meta-*", "Authorization"]
+  }
+]

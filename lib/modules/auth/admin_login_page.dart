@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../dashboard/employer_dashboard.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
@@ -52,7 +53,10 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                           const SizedBox(height: 20),
                           Text(
                             "Admin Login",
-                            style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: titleSize,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 20),
 
@@ -63,7 +67,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                               labelText: "Admin Username",
                               border: OutlineInputBorder(),
                             ),
-                            validator: (value) => value!.isEmpty ? "Enter admin username" : null,
+                            validator: (value) =>
+                                value!.isEmpty ? "Enter admin username" : null,
                           ),
                           const SizedBox(height: 15),
 
@@ -75,7 +80,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                               border: OutlineInputBorder(),
                             ),
                             obscureText: true,
-                            validator: (value) => value!.isEmpty ? "Enter password" : null,
+                            validator: (value) =>
+                                value!.isEmpty ? "Enter password" : null,
                           ),
                           const SizedBox(height: 25),
 
@@ -90,10 +96,18 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                               if (_formKey.currentState!.validate()) {
                                 if (_usernameController.text == "admin" &&
                                     _passwordController.text == "1234") {
-                                  Navigator.pushReplacementNamed(context, '/admindashboard');
+                                  // ✅ Navigate directly to EmployerDashboard
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const EmployerDashboard(),
+                                    ),
+                                  );
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text("Invalid credentials")),
+                                    const SnackBar(
+                                        content: Text("Invalid credentials")),
                                   );
                                 }
                               }

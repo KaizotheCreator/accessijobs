@@ -15,23 +15,25 @@ class EmployerDashboard extends StatefulWidget {
 }
 
 class _EmployerDashboardState extends State<EmployerDashboard> {
-  int _selectedIndex = 1; // 👈 Default to Map Lobby
-  bool _showMapPreview = true; // 👈 Toggle for floating map
-
-  final List<Widget> _pages = [
-    const JobPostingModule(), // 👈 Job Posting
-    const InteractiveMap(), // 👈 Map lobby
-    const JobApplicationsPage(jobId: "placeholder"),
-    const JobAnalyticsPage(),
-    const CompanyProfilePage(),
-  ];
+  int _selectedIndex = 0; // 👈 Default to Landing Page
+  bool _showMapPreview = true;
 
   final List<String> _pageTitles = [
+    "Home",
     "Post a Job",
     "Map Lobby",
     "Applications",
     "Analytics",
     "Company Profile",
+  ];
+
+  late final List<Widget> _pages = [
+    const CompanyProfilePage(), // 👈 Home now shows Company Profile widget
+    const JobPostingModule(),
+    const InteractiveMap(),
+    const JobApplicationsPage(jobId: "placeholder"),
+    const JobAnalyticsPage(),
+    const CompanyProfilePage(),
   ];
 
   @override
@@ -41,16 +43,14 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
     _checkAuth();
   }
 
-  /// 🔑 Restore last opened tab
   Future<void> _loadLastTab() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _selectedIndex = prefs.getInt('employer_last_tab') ?? 1;
-      _showMapPreview = prefs.getBool('employer_map_preview') ?? true;
+      _selectedIndex = prefs.getInt('employer_last_tab') ?? 0; // 👈 Default Home
+      _showMapPreview = prefs.getBool('employer_map_preview') ?? false;
     });
   }
 
-  /// 💾 Save last opened tab + toggle
   Future<void> _saveLastTab(int index) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('employer_last_tab', index);
@@ -61,7 +61,6 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
     await prefs.setBool('employer_map_preview', value);
   }
 
-  /// 🔒 Check if user is logged in
   Future<void> _checkAuth() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -70,19 +69,18 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
   }
 
   void _onSelectPage(int index) {
-    print("Switching to tab: $index"); // 👀 debug
     setState(() {
       _selectedIndex = index;
     });
     _saveLastTab(index);
-    Navigator.pop(context); // Close the drawer
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: false, 
         title: Text(_pageTitles[_selectedIndex]),
         actions: [
           IconButton(
@@ -95,18 +93,15 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
                   content: const Text("Do you really want to log out?"),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text("No"),
-                    ),
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text("No")),
                     TextButton(
-                      onPressed: () => Navigator.pop(context, "choose_login"),
-                      child: const Text("Yes"),
-                    ),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text("Yes")),
                   ],
                 ),
               );
-
-              if (shouldLogout ?? false) {
+              if (shouldLogout == true) {
                 await FirebaseAuth.instance.signOut();
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.remove('employer_last_tab');
@@ -122,36 +117,33 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
           children: [
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.blue),
-              child: Text(
-                "Employer Dashboard",
-                style: TextStyle(color: Colors.white, fontSize: 20),
-              ),
+              child: Text("Employer Dashboard",
+                  style: TextStyle(color: Colors.white, fontSize: 20)),
             ),
             ListTile(
-              leading: const Icon(Icons.post_add),
-              title: const Text("Post Job"),
-              onTap: () => _onSelectPage(0),
-            ),
+                leading: const Icon(Icons.home),
+                title: const Text("Home"),
+                onTap: () => _onSelectPage(0)),
             ListTile(
-              leading: const Icon(Icons.map),
-              title: const Text("Map Lobby"),
-              onTap: () => _onSelectPage(1),
-            ),
+                leading: const Icon(Icons.post_add),
+                title: const Text("Post Job"),
+                onTap: () => _onSelectPage(1)),
             ListTile(
-              leading: const Icon(Icons.people),
-              title: const Text("Applications"),
-              onTap: () => _onSelectPage(2),
-            ),
+                leading: const Icon(Icons.map),
+                title: const Text("Map Lobby"),
+                onTap: () => _onSelectPage(2)),
             ListTile(
-              leading: const Icon(Icons.analytics),
-              title: const Text("Analytics"),
-              onTap: () => _onSelectPage(3),
-            ),
+                leading: const Icon(Icons.people),
+                title: const Text("Applications"),
+                onTap: () => _onSelectPage(3)),
             ListTile(
-              leading: const Icon(Icons.business),
-              title: const Text("Company Profile"),
-              onTap: () => _onSelectPage(4),
-            ),
+                leading: const Icon(Icons.analytics),
+                title: const Text("Analytics"),
+                onTap: () => _onSelectPage(4)),
+            ListTile(
+                leading: const Icon(Icons.business),
+                title: const Text("Company Profile"),
+                onTap: () => _onSelectPage(5)),
             const Divider(),
             SwitchListTile(
               title: const Text("Show Floating Map Preview"),
@@ -167,12 +159,15 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
       ),
       body: Stack(
         children: [
+          // 👇 Add background.png
           Positioned.fill(
-            child: _pages[_selectedIndex],
+            child: Image.asset(
+              "assets/background.png",
+              fit: BoxFit.cover,
+            ),
           ),
-
-          // 👇 Floating map preview (toggle controlled)
-          if (_selectedIndex != 1 && _showMapPreview)
+          Positioned.fill(child: _pages[_selectedIndex]),
+          if (_selectedIndex != 2 && _showMapPreview)
             Positioned(
               bottom: 16,
               left: 16,
@@ -180,14 +175,12 @@ class _EmployerDashboardState extends State<EmployerDashboard> {
               child: Card(
                 elevation: 6,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                    borderRadius: BorderRadius.circular(16)),
                 child: SizedBox(
                   height: 180,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: InteractiveMap(),
-                  ),
+                      borderRadius: BorderRadius.circular(16),
+                      child: const InteractiveMap()),
                 ),
               ),
             ),

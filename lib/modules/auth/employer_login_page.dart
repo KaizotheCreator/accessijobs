@@ -20,7 +20,7 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
   final FocusNode _passwordFocusNode = FocusNode();
   final GoogleSignIn _googleSignIn = GoogleSignIn();
   bool _obscurePassword = true;
-  String _selectedRole = 'Employer';
+  String _selectedRole = 'employer';
   bool _isLoading = false;
 
   @override

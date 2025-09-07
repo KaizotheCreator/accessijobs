@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 
 class CompanyProfilePage extends StatefulWidget {
   const CompanyProfilePage({super.key});
@@ -66,7 +67,15 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
         headquarters = data['headquarters']?.toString() ?? "Not set";
         foundedDate = data['foundedDate']?.toString() ?? "Not set";
         employees = data['employees']?.toString() ?? "Not set";
-        logoUrl = data['logoUrl']?.toString() ?? "";
+
+        // ✅ Add timestamp to force reload of cached logo
+        if (data['logoUrl'] != null && data['logoUrl'].toString().isNotEmpty) {
+          logoUrl =
+              "${data['logoUrl']}?t=${DateTime.now().millisecondsSinceEpoch}";
+        } else {
+          logoUrl = "";
+        }
+
         _loading = false;
       });
     } else {
@@ -107,44 +116,62 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
     });
   }
 
-  // Upload company logo
-  Future<void> _pickLogo() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-      );
+Future<void> _pickLogo() async {
+  try {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
 
-      if (result != null) {
-        setState(() => _uploadingLogo = true);
+    if (result != null && result.files.single.path != null) {
+      setState(() => _uploadingLogo = true);
 
-        Uint8List fileBytes = result.files.first.bytes!;
-        String fileName = "${user!.uid}.jpg";
+      final file = File(result.files.single.path!); // ✅ actual file
+      final fileName = "${user!.uid}.jpg";
 
-        final storageRef =
-            FirebaseStorage.instance.ref().child("company_logos/$fileName");
+      final supabase = Supabase.instance.client;
 
-        await storageRef.putData(fileBytes);
+      // 1️⃣ Create signed upload URL
+      final signedUrlResponse = await supabase.storage
+          .from("company_logos")
+          .createSignedUploadUrl(fileName);
 
-        String downloadUrl = await storageRef.getDownloadURL();
+      final signedUrl = signedUrlResponse.signedUrl;
+      final path = signedUrlResponse.path;
 
-        await _updateField("logoUrl", downloadUrl);
+      // 2️⃣ Upload the file using signed URL
+      await supabase.storage
+          .from("company_logos")
+          .uploadToSignedUrl(path, signedUrl, file);
 
-        setState(() {
-          logoUrl = downloadUrl;
-          _uploadingLogo = false;
-        });
+      // 3️⃣ ✅ Always get the public URL from Supabase itself
+      final publicUrlResponse =
+          supabase.storage.from("company_logos").getPublicUrl(fileName);
+      final publicUrl = publicUrlResponse;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Company logo updated successfully!')),
-        );
-      }
-    } catch (e) {
-      setState(() => _uploadingLogo = false);
+      // 4️⃣ Add a cache-buster for UI reloads
+      final cacheBustedUrl =
+          "$publicUrl?t=${DateTime.now().millisecondsSinceEpoch}";
+
+      // Save the clean URL (without cache-buster) to Firestore
+      await _updateField("logoUrl", publicUrl);
+
+      setState(() {
+        logoUrl = cacheBustedUrl;
+        _uploadingLogo = false;
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to upload logo: $e')),
+        const SnackBar(content: Text('Company logo updated successfully!')),
       );
     }
+  } catch (e) {
+    setState(() => _uploadingLogo = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Failed to upload logo: $e')),
+    );
+    print("Error uploading logo: $e");
   }
+}
 
   void _editField(String field, String currentValue, Function(String) onSave) {
     final controller = TextEditingController(text: currentValue);
@@ -199,7 +226,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                         TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
                         ElevatedButton(
                           onPressed: () {
-                            final updatedList = controller.text.split(",").map((e) => e.trim()).toList();
+                            final updatedList =
+                                controller.text.split(",").map((e) => e.trim()).toList();
                             onSave(updatedList);
                             _updateField(firestoreField, updatedList);
                             Navigator.pop(context);
@@ -258,7 +286,7 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                                 radius: 50,
                                 backgroundImage: logoUrl.isNotEmpty
                                     ? NetworkImage(logoUrl) as ImageProvider
-                                    : const AssetImage('assets/company.png'),
+                                    : const AssetImage('assets/profile.png'),
                                 child: logoUrl.isEmpty
                                     ? const Icon(Icons.business, size: 50, color: Colors.white)
                                     : null,
@@ -280,11 +308,13 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(companyName, style: Theme.of(context).textTheme.headlineSmall),
+                              Text(companyName,
+                                  style: Theme.of(context).textTheme.headlineSmall),
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () {
-                                  _editField("companyName", companyName, (val) => setState(() => companyName = val));
+                                  _editField("companyName", companyName,
+                                      (val) => setState(() => companyName = val));
                                 },
                               )
                             ],
@@ -296,7 +326,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () {
-                                  _editField("industry", industry, (val) => setState(() => industry = val));
+                                  _editField("industry", industry,
+                                      (val) => setState(() => industry = val));
                                 },
                               )
                             ],
@@ -309,7 +340,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () {
-                                  _editField("about", about, (val) => setState(() => about = val));
+                                  _editField("about", about,
+                                      (val) => setState(() => about = val));
                                 },
                               )
                             ],
@@ -321,7 +353,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                             trailing: IconButton(
                               icon: const Icon(Icons.edit),
                               onPressed: () {
-                                _editField("headquarters", headquarters, (val) => setState(() => headquarters = val));
+                                _editField("headquarters", headquarters,
+                                    (val) => setState(() => headquarters = val));
                               },
                             ),
                           ),
@@ -331,7 +364,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                             trailing: IconButton(
                               icon: const Icon(Icons.edit),
                               onPressed: () {
-                                _editField("foundedDate", foundedDate, (val) => setState(() => foundedDate = val));
+                                _editField("foundedDate", foundedDate,
+                                    (val) => setState(() => foundedDate = val));
                               },
                             ),
                           ),
@@ -341,7 +375,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                             trailing: IconButton(
                               icon: const Icon(Icons.edit),
                               onPressed: () {
-                                _editField("employees", employees, (val) => setState(() => employees = val));
+                                _editField("employees", employees,
+                                    (val) => setState(() => employees = val));
                               },
                             ),
                           ),
@@ -401,7 +436,8 @@ class _CompanyProfilePageState extends State<CompanyProfilePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("📊 Company Stats", style: Theme.of(context).textTheme.titleLarge),
+                          Text("📊 Company Stats",
+                              style: Theme.of(context).textTheme.titleLarge),
                           const SizedBox(height: 8),
                           Text("Total Jobs Posted: $_totalJobs",
                               style: Theme.of(context).textTheme.bodyLarge),

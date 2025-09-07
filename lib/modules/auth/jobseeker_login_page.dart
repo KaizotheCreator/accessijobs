@@ -80,71 +80,74 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
   }
 
   Future<void> _login() async {
-    String email = _emailController.text.trim();
-    String password = _passwordController.text.trim();
+  String email = _emailController.text.trim();
+  String password = _passwordController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill in all fields")),
-      );
-      return;
-    }
+  if (email.isEmpty || password.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Please fill in all fields")),
+    );
+    return;
+  }
 
-    setState(() => _isLoading = true);
+  setState(() => _isLoading = true);
 
-    try {
-      UserCredential userCredential =
-          await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+  try {
+    UserCredential userCredential =
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
 
-      final user = userCredential.user!;
+    final user = userCredential.user!;
+    String? userRole = await getUserRole(user.uid);
+
+    if (userRole == 'jobseeker') {
+      // ✅ Only setup jobseeker data if their role is correct
       await _setupJobseekerData(user);
 
-      String? userRole = await getUserRole(user.uid);
-
-      if (userRole == 'jobseeker') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Jobseeker login successful")),
-        );
-        Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
-      } else {
-        await FirebaseAuth.instance.signOut();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  "This account is not registered as a Jobseeker. Please use Employer login.")),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      String message;
-      switch (e.code) {
-        case 'user-not-found':
-          message = "No jobseeker found with this email.";
-          break;
-        case 'wrong-password':
-          message = "Incorrect password.";
-          break;
-        case 'invalid-email':
-          message = "Invalid email format.";
-          break;
-        case 'user-disabled':
-          message = "This account has been disabled.";
-          break;
-        default:
-          message = "Login failed: ${e.message}";
-      }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
-    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Unexpected error: $e")),
+        const SnackBar(content: Text("Jobseeker login successful")),
       );
-    } finally {
-      setState(() => _isLoading = false);
+      Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
+    } else {
+      // ❌ Wrong role — log them out
+      await FirebaseAuth.instance.signOut();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              "This account is not registered as a Jobseeker. Please use Employer login."),
+        ),
+      );
     }
+  } on FirebaseAuthException catch (e) {
+    String message;
+    switch (e.code) {
+      case 'user-not-found':
+        message = "No account found with this email.";
+        break;
+      case 'wrong-password':
+        message = "Incorrect password.";
+        break;
+      case 'invalid-email':
+        message = "Invalid email format.";
+        break;
+      case 'user-disabled':
+        message = "This account has been disabled.";
+        break;
+      default:
+        message = "Login failed: ${e.message}";
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Unexpected error: $e")),
+    );
+  } finally {
+    setState(() => _isLoading = false);
   }
+}
 
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);

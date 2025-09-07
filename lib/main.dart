@@ -4,23 +4,31 @@ import 'package:firebase_core/firebase_core.dart';
 import 'navigator.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 // Import your dashboards
 import 'modules/dashboard/jobseeker_dashboard.dart';
 import 'modules/dashboard/employer_dashboard.dart';
 import 'modules/dashboard/admin_dashboard.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ✅ Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // ✅ Initialize Supabase (for image storage)
+  await sb.Supabase.initialize(
+    url: 'https://vndnadirfmipjjfvofbh.supabase.co',  // 🔑 Replace with your Supabase project URL
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZuZG5hZGlyZm1pcGpqZnZvZmJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxNTU0MzksImV4cCI6MjA3MjczMTQzOX0.PWlLOVclbnMf1acUUesL1fn4cLbTyHmDKXW-ux7x_hs',            // 🔑 Replace with anon/public key
+  );
+
   // ✅ Decide initial route based on auth + role
   String initialRoute = '/choose_login';
-  User? currentUser = FirebaseAuth.instance.currentUser;
+  fb_auth.User? currentUser = fb_auth.FirebaseAuth.instance.currentUser;
 
   if (currentUser != null) {
     try {
@@ -60,7 +68,7 @@ class MyApp extends StatelessWidget {
     });
 
     return MaterialApp(
-      title: "Accessijob",
+      title: "Accessijobs",
       debugShowCheckedModeBanner: false,
       onGenerateRoute: AppNavigator.generateRoute,
       initialRoute: initialRoute,
@@ -76,9 +84,9 @@ class MyApp extends StatelessWidget {
   void _initializeFirestore() async {
     try {
       await FirebaseFirestore.instance.enablePersistence();
-      print("Offline persistence enabled");
+      print("✅ Firestore offline persistence enabled");
     } catch (e) {
-      print("Offline persistence could not be enabled: $e");
+      print("⚠️ Firestore persistence could not be enabled: $e");
     }
   }
 }
