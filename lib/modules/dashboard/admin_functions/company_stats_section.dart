@@ -8,46 +8,43 @@ class CompanyStatsSection extends StatelessWidget {
 
   Future<Map<String, int>> _fetchStats() async {
     final firestore = FirebaseFirestore.instance;
-    
 
     int totalJobs = 0;
     int totalApplications = 0;
     int totalEmployees = 0;
     int activeJobs = 0;
 
+    // --- JOBS COUNT ---
     Query jobsQuery = firestore.collection("jobs");
-
-    // If employerId is provided → company stats
     if (employerId != null) {
       jobsQuery = jobsQuery.where("employerId", isEqualTo: employerId);
     }
+    final jobsSnap = await jobsQuery.count().get();
+    totalJobs = jobsSnap.count ?? 0;
 
-    final jobsSnapshot = await jobsQuery.get();
-    totalJobs = jobsSnapshot.docs.length;
-
-    for (var jobDoc in jobsSnapshot.docs) {
-  final jobData = jobDoc.data() as Map<String, dynamic>;
-
-  final appsSnapshot =
-      await jobDoc.reference.collection("applications").get();
-  totalApplications += appsSnapshot.size;
-
-  if ((jobData["status"] ?? "") == "active") {
-    activeJobs++;
-  }
-}
-
-    // Employees collection (optional: store companyId on user docs)
+    // --- ACTIVE JOBS COUNT ---
+    Query activeJobsQuery = firestore.collection("jobs").where("status", isEqualTo: "active");
     if (employerId != null) {
-      final employeesSnapshot = await firestore
-          .collection("users")
-          .where("companyId", isEqualTo: employerId)
-          .get();
-      totalEmployees = employeesSnapshot.size;
-    } else {
-      final employeesSnapshot = await firestore.collection("users").get();
-      totalEmployees = employeesSnapshot.size;
+      activeJobsQuery = activeJobsQuery.where("employerId", isEqualTo: employerId);
     }
+    final activeJobsSnap = await activeJobsQuery.count().get();
+    activeJobs = activeJobsSnap.count ?? 0;
+
+    // --- APPLICATIONS COUNT ---
+    Query appsQuery = firestore.collection("applications");
+    if (employerId != null) {
+      appsQuery = appsQuery.where("employerId", isEqualTo: employerId);
+    }
+    final appsSnap = await appsQuery.count().get();
+    totalApplications = appsSnap.count ?? 0;
+
+    // --- EMPLOYEES COUNT ---
+    Query employeesQuery = firestore.collection("users");
+    if (employerId != null) {
+      employeesQuery = employeesQuery.where("companyId", isEqualTo: employerId);
+    }
+    final employeesSnap = await employeesQuery.count().get();
+    totalEmployees = employeesSnap.count ?? 0;
 
     return {
       "totalJobs": totalJobs,

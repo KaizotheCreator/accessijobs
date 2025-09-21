@@ -22,7 +22,7 @@ class AppNavigator {
       case '/employer_dashboard':
         return MaterialPageRoute(builder: (_) => const EmployerDashboard());
       case '/signup':
-        return MaterialPageRoute(builder: (_) => const SignUpPage());
+        return MaterialPageRoute(builder: (_) => const UnifiedSignupPage());
       case '/admin':
         return MaterialPageRoute(builder: (_) => const AdminLoginPage());
       case '/admindashboard':

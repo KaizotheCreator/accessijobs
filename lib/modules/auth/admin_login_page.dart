@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../dashboard/employer_dashboard.dart';
+import '../dashboard/admin_dashboard.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});
@@ -96,12 +96,11 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                               if (_formKey.currentState!.validate()) {
                                 if (_usernameController.text == "admin" &&
                                     _passwordController.text == "1234") {
-                                  // ✅ Navigate directly to EmployerDashboard
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
                                       builder: (context) =>
-                                          const EmployerDashboard(),
+                                          const AdminDashboardPage(),
                                     ),
                                   );
                                 } else {
@@ -112,7 +111,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                                 }
                               }
                             },
-                            child: const Text("Admin Login"),
+                            child: const Text("Login"),
                           ),
                         ],
                       ),

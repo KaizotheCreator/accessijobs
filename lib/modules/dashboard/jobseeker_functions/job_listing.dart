@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geocoding/geocoding.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class JobListingPage extends StatefulWidget {
   const JobListingPage({Key? key}) : super(key: key);
@@ -15,7 +18,6 @@ class _JobListingPageState extends State<JobListingPage> {
   final ScrollController _scrollController = ScrollController();
 
   String searchQuery = "";
-
   String? selectedJobType = "All";
   String? selectedCompany = "All";
   String? selectedWorkSetup = "All";
@@ -35,6 +37,7 @@ class _JobListingPageState extends State<JobListingPage> {
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null && args['scrollToJobId'] != null) {
       scrollToJobId = args['scrollToJobId'];
+      debugPrint("📌 Highlight this job: $scrollToJobId");
     }
   }
 
@@ -48,34 +51,51 @@ class _JobListingPageState extends State<JobListingPage> {
     await Future.delayed(const Duration(milliseconds: 300));
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
-        index * 220.0,
-        duration: const Duration(milliseconds: 500),
+        index * 240.0, // Adjust based on card height
+        duration: const Duration(milliseconds: 600),
         curve: Curves.easeInOut,
       );
     }
   }
 
-  Future<String> _getAddressFromLatLng(double lat, double lng, String jobId) async {
-  if (_addressCache.containsKey(jobId)) return _addressCache[jobId]!;
-  
-  try {
-    // Ensure proper handling for valid coordinates
-    if (lat == 0.0 && lng == 0.0) return "Unknown location";
+ Future<String> _getAddressFromLatLng(double lat, double lng, String jobId) async {
+  debugPrint("🌍 Mapbox Geocoding for JobID: $jobId | lat: $lat | lng: $lng");
 
-    final placemarks = await placemarkFromCoordinates(lat, lng);
-    if (placemarks.isNotEmpty) {
-      final place = placemarks.first;
-      final address =
-          "${place.street ?? ''}, ${place.locality ?? ''}, ${place.administrativeArea ?? ''}, ${place.country ?? ''}"
-              .trim();
-      _addressCache[jobId] = address;
-      return address;
-    } else {
-      return "Unknown location";
+  const String mapboxToken = "pk.eyJ1IjoicmVpamkyMDAyIiwiYSI6ImNsdnV6b2Q5YzFzMjgya214ZW5rZnFwZTEifQ.pEJZ0EOKW3tMR0wxmr--cQ";
+
+  try {
+    // ✅ Return cached address if already fetched
+    if (_addressCache.containsKey(jobId)) {
+      return _addressCache[jobId]!;
     }
-  } catch (e) {
-    print("❌ Geocoding error: $e"); // Debugging log
-    return "Unknown location";
+
+    // 🌐 Mapbox Reverse Geocoding API
+    final url = Uri.parse(
+      "https://api.mapbox.com/geocoding/v5/mapbox.places/$lng,$lat.json?access_token=$mapboxToken&limit=1",
+    );
+
+    final response = await http.get(url);
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      if (data["features"] != null && data["features"].isNotEmpty) {
+        final placeName = data["features"][0]["place_name"];
+        _addressCache[jobId] = placeName;
+        debugPrint("📍 Address found: $placeName");
+        return placeName;
+      } else {
+        debugPrint("⚠️ No address found for $lat,$lng");
+        return "Location not found";
+      }
+    } else {
+      debugPrint("❌ Mapbox API error: ${response.statusCode}");
+      return "Location not available";
+    }
+  } catch (e, stack) {
+    debugPrint("❌ Mapbox Geocoding failed: $e");
+    debugPrint(stack.toString());
+    return "Location not available";
   }
 }
 
@@ -93,9 +113,20 @@ class _JobListingPageState extends State<JobListingPage> {
   }
 
   Future<void> _applyForJob(String jobId, Map<String, dynamic> jobData) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+  final user = _auth.currentUser;
+  if (user == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("❌ You must be logged in to apply for a job."),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    return;
+  }
 
+  try {
+    // ✅ Check if the user has already applied
     if (await _hasAlreadyApplied(jobId)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -104,26 +135,34 @@ class _JobListingPageState extends State<JobListingPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-      return;
+      return; 
     }
 
+    // ✅ Build application data
     final applicationData = {
       'jobId': jobId,
       'jobTitle': jobData['title'],
       'company': jobData['company'],
-      'userId': user.uid,
+      'userId': user.uid, // Jobseeker ID
       'status': 'Pending',
       'appliedAt': FieldValue.serverTimestamp(),
     };
 
+    // ✅ Save under jobs/{jobId}/applications
     await FirebaseFirestore.instance
         .collection('jobs')
         .doc(jobId)
         .collection('applications')
         .add(applicationData);
 
-    await FirebaseFirestore.instance.collection('job_applications').add(applicationData);
+    // ✅ Save under global job_applications collection
+    await FirebaseFirestore.instance
+        .collection('job_applications')
+        .add(applicationData);
 
+    debugPrint("✅ Application saved successfully for job: $jobId");
+
+    // ✅ Show success message
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text("✅ Application submitted successfully!"),
@@ -131,7 +170,23 @@ class _JobListingPageState extends State<JobListingPage> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+
+    // ✅ Navigate back to job listing page
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => JobListingPage()),
+    );
+  } catch (e, stack) {
+    debugPrint("❌ Error applying for job: $e\n$stack");
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("❌ Failed to apply for job: $e"),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -161,6 +216,7 @@ class _JobListingPageState extends State<JobListingPage> {
               constraints: const BoxConstraints(maxWidth: 600),
               child: Column(
                 children: [
+                  // Search Bar
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: TextField(
@@ -183,6 +239,7 @@ class _JobListingPageState extends State<JobListingPage> {
 
                   const SizedBox(height: 12),
 
+                  // Filters
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -214,6 +271,7 @@ class _JobListingPageState extends State<JobListingPage> {
 
                   const SizedBox(height: 12),
 
+                  // Job List
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
@@ -264,6 +322,7 @@ class _JobListingPageState extends State<JobListingPage> {
                           );
                         }
 
+                        // Scroll to highlighted job once
                         if (scrollToJobId != null && !hasScrolled) {
                           final index = jobs.indexWhere((doc) => doc.id == scrollToJobId);
                           if (index != -1) {
@@ -333,16 +392,27 @@ class _JobListingPageState extends State<JobListingPage> {
     bool hasApplied, {
     bool highlight = false,
   }) {
-    return Card(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
       margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 4,
-      color: highlight ? Colors.yellow.shade100 : Colors.white,
+      decoration: BoxDecoration(
+        color: highlight ? Colors.yellow.shade200 : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: highlight ? Colors.yellow.shade700.withOpacity(0.5) : Colors.black12,
+            blurRadius: 8,
+            spreadRadius: highlight ? 2 : 1,
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Job Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -364,6 +434,7 @@ class _JobListingPageState extends State<JobListingPage> {
             ),
             const SizedBox(height: 8),
 
+            // Job Description
             Text(
               job['description'] ?? "No description available.",
               maxLines: 2,
@@ -372,24 +443,40 @@ class _JobListingPageState extends State<JobListingPage> {
             ),
             const SizedBox(height: 8),
 
-            if (job['lat'] != null && job['lng'] != null)
-              FutureBuilder<String>(
-                future: _getAddressFromLatLng(job['lat'], job['lng'], jobId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Text(
-                      "Fetching location...",
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    );
-                  }
-                  return Text(
-                    snapshot.data ?? "Unknown location",
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  );
-                },
-              ),
+            // Address
+(job['lat'] != null && job['lng'] != null)
+    ? FutureBuilder<String>(
+        future: _getAddressFromLatLng(
+          (job['lat'] as num).toDouble(),
+          (job['lng'] as num).toDouble(),
+          jobId,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Text(
+              "Fetching location...",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            );
+          }
+          if (snapshot.hasError) {
+            return const Text(
+              "Error fetching location",
+              style: TextStyle(fontSize: 12, color: Colors.red),
+            );
+          }
+          return Text(
+            snapshot.data ?? "Unknown location",
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          );
+        },
+      )
+    : const Text(
+        "Location not available",
+        style: TextStyle(fontSize: 12, color: Colors.grey),
+      ),
             const SizedBox(height: 12),
 
+            // Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -437,8 +524,8 @@ class JobDetailsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double? lat = jobData['lat'];
-    final double? lng = jobData['lng'];
+    final double lat = (jobData['lat'] as num).toDouble();
+    final double lng = (jobData['lng'] as num).toDouble();
 
     final dynamic salary = jobData['salary'];
     final String salaryText =
@@ -496,27 +583,26 @@ class JobDetailsPage extends StatelessWidget {
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.bold, color: Colors.greenAccent),
                     ),
-                    const SizedBox(height: 16),
-                    lat != null && lng != null
-                        ? FutureBuilder<String>(
-                            future: getAddressFromLatLng(lat, lng, jobId),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState == ConnectionState.waiting) {
-                                return const Text(
-                                  "Fetching location...",
-                                  style: TextStyle(fontSize: 14, color: Colors.white70),
-                                );
-                              }
-                              return Text(
-                                "Location: ${snapshot.data}",
-                                style: const TextStyle(fontSize: 14, color: Colors.white),
-                              );
-                            },
-                          )
-                        : const Text(
-                            "Location: Not available",
-                            style: TextStyle(color: Colors.white),
-                          ),
+                    lat != 0.0 && lng != 0.0
+    ? FutureBuilder<String>(
+        future: getAddressFromLatLng(lat, lng, jobId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Text(
+              "Fetching location...",
+              style: TextStyle(fontSize: 14, color: Colors.white70),
+            );
+          }
+          return Text(
+            "Location: ${snapshot.data}",
+            style: const TextStyle(fontSize: 14, color: Colors.white),
+          );
+        },
+      )
+    : const Text(
+        "Location: Not available",
+        style: TextStyle(color: Colors.white),
+      ),
                   ],
                 ),
               ),

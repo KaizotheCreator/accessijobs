@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'employer_login_page.dart';
+import 'forgot_password_page.dart';
 
 class JobseekerLoginPage extends StatefulWidget {
   const JobseekerLoginPage({super.key});
@@ -18,7 +19,7 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
   final FocusNode _passwordFocusNode = FocusNode();
   final GoogleSignIn _googleSignIn = GoogleSignIn();
   bool _obscurePassword = true;
-  String _selectedRole = 'Jobseeker';
+  String _selectedRole = 'jobseeker';
   bool _isLoading = false;
 
   @override
@@ -28,50 +29,15 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
     super.dispose();
   }
 
-  /// 🔹 Ensure Firestore structure exists for Jobseeker
-  Future<void> _setupJobseekerData(User user) async {
-    final userRef = FirebaseFirestore.instance.collection("users").doc(user.uid);
-
-    // Root user doc
-    await userRef.set({
-      "email": user.email,
-      "role": "jobseeker",
-      "createdAt": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    // Profile subcollection
-    final profileDoc = userRef.collection("profile").doc("main");
-    if (!(await profileDoc.get()).exists) {
-      await profileDoc.set({
-        "name": "",
-        "title": "",
-        "bio": "",
-        "skills": [],
-        "achievements": [],
-        "certifications": [],
-        "updatedAt": FieldValue.serverTimestamp(),
-      });
-    }
-
-    // Resumes subcollection
-    final resumesRef = userRef.collection("resumes");
-    final resumeDocs = await resumesRef.get();
-    if (resumeDocs.docs.isEmpty) {
-      await resumesRef.add({
-        "title": "Default Resume",
-        "theme": "modern",
-        "payload": {},
-        "createdAt": FieldValue.serverTimestamp(),
-        "updatedAt": FieldValue.serverTimestamp(),
-      });
-    }
-  }
-
+  /// Fetch user role from Firestore
   Future<String?> getUserRole(String uid) async {
     try {
       DocumentSnapshot userDoc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (userDoc.exists) return userDoc['role'];
+      if (userDoc.exists) {
+        final data = userDoc.data() as Map<String, dynamic>;
+        return data['role']; // consistent: only role
+      }
       return null;
     } catch (e) {
       print("Error getting user role: $e");
@@ -79,76 +45,87 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
     }
   }
 
+  /// Save new jobseeker user in Firestore (only if user doesn’t exist yet)
+  Future<void> _saveJobseekerIfNew(User user) async {
+    final userRef =
+        FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+    final docSnapshot = await userRef.get();
+    if (!docSnapshot.exists) {
+      await userRef.set({
+        'email': user.email,
+        'role': 'jobseeker', // lowercase
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  /// Email/Password Login
   Future<void> _login() async {
-  String email = _emailController.text.trim();
-  String password = _passwordController.text.trim();
+    String email = _emailController.text.trim();
+    String password = _passwordController.text.trim();
 
-  if (email.isEmpty || password.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Please fill in all fields")),
-    );
-    return;
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill in all fields")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      String? userRole = await getUserRole(userCredential.user!.uid);
+
+      if (userRole == 'jobseeker') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Jobseeker login successful")),
+        );
+        Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
+      } else {
+        await FirebaseAuth.instance.signOut();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  "This account is not registered as a Jobseeker. Please use Employer login.")),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message;
+      switch (e.code) {
+        case 'user-not-found':
+          message = "No jobseeker found with this email.";
+          break;
+        case 'wrong-password':
+          message = "Incorrect password.";
+          break;
+        case 'invalid-email':
+          message = "Invalid email format.";
+          break;
+        case 'user-disabled':
+          message = "This jobseeker account has been disabled.";
+          break;
+        default:
+          message = "Login failed: ${e.message}";
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Unexpected error: $e")),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
-  setState(() => _isLoading = true);
-
-  try {
-    UserCredential userCredential =
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-
-    final user = userCredential.user!;
-    String? userRole = await getUserRole(user.uid);
-
-    if (userRole == 'jobseeker') {
-      // ✅ Only setup jobseeker data if their role is correct
-      await _setupJobseekerData(user);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Jobseeker login successful")),
-      );
-      Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
-    } else {
-      // ❌ Wrong role — log them out
-      await FirebaseAuth.instance.signOut();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              "This account is not registered as a Jobseeker. Please use Employer login."),
-        ),
-      );
-    }
-  } on FirebaseAuthException catch (e) {
-    String message;
-    switch (e.code) {
-      case 'user-not-found':
-        message = "No account found with this email.";
-        break;
-      case 'wrong-password':
-        message = "Incorrect password.";
-        break;
-      case 'invalid-email':
-        message = "Invalid email format.";
-        break;
-      case 'user-disabled':
-        message = "This account has been disabled.";
-        break;
-      default:
-        message = "Login failed: ${e.message}";
-    }
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Unexpected error: $e")),
-    );
-  } finally {
-    setState(() => _isLoading = false);
-  }
-}
-
+  /// Google Sign-in
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
 
@@ -171,26 +148,22 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
       UserCredential userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
 
-      final user = userCredential.user!;
-      await _setupJobseekerData(user);
-
+      final uid = userCredential.user!.uid;
       final userDoc =
-          FirebaseFirestore.instance.collection('users').doc(user.uid);
+          FirebaseFirestore.instance.collection('users').doc(uid);
       final docSnapshot = await userDoc.get();
 
       if (!docSnapshot.exists) {
+        await _saveJobseekerIfNew(userCredential.user!);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Welcome! Your Jobseeker account has been created.")),
+          const SnackBar(
+              content: Text("Welcome! Your Jobseeker account has been created.")),
         );
-        Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
       } else {
-        String role = docSnapshot['role'];
-        if (role == 'jobseeker') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Jobseeker login successful")),
-          );
-          Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
-        } else {
+        final data = docSnapshot.data() as Map<String, dynamic>;
+        String role = data['role'] ?? '';
+
+        if (role != 'jobseeker') {
           await FirebaseAuth.instance.signOut();
           await _googleSignIn.signOut();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -198,8 +171,13 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
                 content: Text(
                     "This Google account is registered as Employer. Please use Employer login.")),
           );
+          setState(() => _isLoading = false);
+          return;
         }
       }
+
+      // Navigate to dashboard
+      Navigator.pushReplacementNamed(context, '/jobseeker_dashboard');
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Google sign-in failed: $error")),
@@ -210,7 +188,7 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
   }
 
   void _navigateToSelectedRole(String? role) {
-    if (role == 'Employer') {
+    if (role == 'employer') {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const EmployerLoginPage()),
@@ -248,9 +226,13 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         GestureDetector(
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/admin_login'),
-                          child: Image.asset('assets/logo.png', height: 50),
+                          onTap: () {
+                            Navigator.pushReplacementNamed(context, '/admin');
+                          },
+                          child: Image.asset(
+                            'assets/logo.png',
+                            height: 50,
+                          ),
                         ),
                         DropdownButton<String>(
                           value: _selectedRole,
@@ -260,11 +242,14 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
                             setState(() => _selectedRole = newValue!);
                             _navigateToSelectedRole(newValue);
                           },
-                          items: <String>['Jobseeker', 'Employer']
+                          items: <String>['jobseeker', 'employer']
                               .map<DropdownMenuItem<String>>((String value) {
                             return DropdownMenuItem<String>(
                               value: value,
-                              child: Text(value),
+                              child: Text(
+                                value[0].toUpperCase() + value.substring(1),
+                                style: const TextStyle(color: Colors.white),
+                              ),
                             );
                           }).toList(),
                         ),
@@ -333,6 +318,26 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
                         }
                       },
                     ),
+                    const SizedBox(height: 12),
+
+Align(
+  alignment: Alignment.centerRight,
+  child: TextButton(
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
+      );
+    },
+    child: const Text(
+      "Forgot Password?",
+      style: TextStyle(
+        color: Colors.blueAccent,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  ),
+),
                     const SizedBox(height: 24),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -389,18 +394,26 @@ class _JobseekerLoginPageState extends State<JobseekerLoginPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    GestureDetector(
-                      onTap: _isLoading
-                          ? null
-                          : () => Navigator.pushNamed(context, '/signup'),
-                      child: Text(
-                        "Don't have an account? Sign Up",
-                        style: TextStyle(
-                          color: _isLoading ? Colors.grey : Colors.blueAccent,
-                          fontSize: 14,
-                          decoration: TextDecoration.underline,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Don't have an account?",
+                            style: TextStyle(color: Colors.white70)),
+                        TextButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                                  Navigator.pushNamed(context, '/signup');
+                                },
+                          child: const Text(
+                            "Sign Up",
+                            style: TextStyle(
+                              color: Colors.blueAccent,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),

@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'jobseeker_login_page.dart';
 import '../dashboard/employer_dashboard.dart';
 import 'signup_page.dart';
+import 'forgot_password_page.dart';
 
 class EmployerLoginPage extends StatefulWidget {
   const EmployerLoginPage({super.key});
@@ -20,7 +21,7 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
   final FocusNode _passwordFocusNode = FocusNode();
   final GoogleSignIn _googleSignIn = GoogleSignIn();
   bool _obscurePassword = true;
-  String _selectedRole = 'employer';
+  String _selectedRole = 'employer'; // lowercase
   bool _isLoading = false;
 
   @override
@@ -45,7 +46,7 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (userDoc.exists) {
         final data = userDoc.data() as Map<String, dynamic>;
-        return data['role'];
+        return data['role']; // lowercase role
       }
       return null;
     } catch (e) {
@@ -54,16 +55,19 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
     }
   }
 
-  /// Create or update user in Firestore
-  Future<void> _saveUserToFirestore(User user, String role) async {
+  /// Save new employer user in Firestore (only if user doesn’t exist yet)
+  Future<void> _saveEmployerIfNew(User user) async {
     final userRef =
         FirebaseFirestore.instance.collection('users').doc(user.uid);
 
-    await userRef.set({
-      'email': user.email,
-      'userType': role,
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    final docSnapshot = await userRef.get();
+    if (!docSnapshot.exists) {
+      await userRef.set({
+        'email': user.email,
+        'role': 'employer', // lowercase
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   /// Email/Password Login
@@ -86,9 +90,6 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
         email: email,
         password: password,
       );
-
-      // Save user data in Firestore
-      await _saveUserToFirestore(userCredential.user!, 'employer');
 
       String? userRole = await getUserRole(userCredential.user!.uid);
 
@@ -166,15 +167,14 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
       final docSnapshot = await userDoc.get();
 
       if (!docSnapshot.exists) {
-        // First-time Google login → create Firestore user
-        await _saveUserToFirestore(userCredential.user!, 'employer');
+        await _saveEmployerIfNew(userCredential.user!);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text("Welcome! Your Employer account has been created.")),
         );
       } else {
         final data = docSnapshot.data() as Map<String, dynamic>;
-        String role = data['userType'] ?? data['role'] ?? '';
+        String role = data['role'] ?? '';
 
         if (role != 'employer') {
           await FirebaseAuth.instance.signOut();
@@ -203,13 +203,15 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
     }
   }
 
+  /// Handle role change via dropdown
   void _navigateToSelectedRole(String? role) {
-    if (role == 'Jobseeker') {
+    if (role == 'jobseeker') {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const JobseekerLoginPage()),
       );
     }
+    // if role == employer → stay here
   }
 
   @override
@@ -242,25 +244,43 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         GestureDetector(
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/admin_login'),
-                          child: Image.asset('assets/logo.png', height: 50),
+                          onTap: () {
+                            Navigator.pushReplacementNamed(context, '/admin');
+                          },
+                          child: Image.asset(
+                            'assets/logo.png',
+                            height: 50,
+                          ),
                         ),
                         DropdownButton<String>(
                           value: _selectedRole,
                           dropdownColor: Colors.grey[900],
                           style: const TextStyle(color: Colors.white, fontSize: 16),
                           onChanged: (String? newValue) {
-                            setState(() => _selectedRole = newValue!);
-                            _navigateToSelectedRole(newValue);
+                            if (newValue != null) {
+                              setState(() => _selectedRole = newValue);
+                              _navigateToSelectedRole(newValue);
+                            }
                           },
-                          items: <String>['Employer', 'Jobseeker']
+                          items: <String>['employer', 'jobseeker']
                               .map<DropdownMenuItem<String>>((String value) {
                             return DropdownMenuItem<String>(
                               value: value,
-                              child: Text(value),
+                              child: Text(
+                                value[0].toUpperCase() + value.substring(1),
+                                style: const TextStyle(color: Colors.white),
+                              ),
                             );
                           }).toList(),
+                          selectedItemBuilder: (BuildContext context) {
+                            return <String>['employer', 'jobseeker']
+                                .map((String value) {
+                              return Text(
+                                value[0].toUpperCase() + value.substring(1),
+                                style: const TextStyle(color: Colors.white),
+                              );
+                            }).toList();
+                          },
                         ),
                       ],
                     ),
@@ -327,6 +347,26 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
                         }
                       },
                     ),
+                    const SizedBox(height: 12),
+
+Align(
+  alignment: Alignment.centerRight,
+  child: TextButton(
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
+      );
+    },
+    child: const Text(
+      "Forgot Password?",
+      style: TextStyle(
+        color: Colors.blueAccent,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  ),
+),
                     const SizedBox(height: 24),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -395,7 +435,7 @@ class _EmployerLoginPageState extends State<EmployerLoginPage> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                        builder: (context) => const SignUpPage()),
+                                        builder: (context) => const UnifiedSignupPage()),
                                   );
                                 },
                           child: const Text(
